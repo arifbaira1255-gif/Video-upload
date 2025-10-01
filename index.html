@@ -1,25 +1,223 @@
+
 <!DOCTYPE html>
 <html lang="ur">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>میری ویڈیو شیئرنگ ویب سائٹ</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>میری ویڈیو شیئرنگ ویب سائٹ</title>
+  <style>
+    :root{--max:760px;--accent:#2b8a3e}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans",Arial;margin:0;background:#f2f6f9;color:#111}
+    header{background:linear-gradient(90deg,#0b5f3f,#2b8a3e);color:#fff;padding:18px 12px;text-align:center}
+    header h1{margin:0;font-size:20px}
+    header p{margin:6px 0 0;font-size:13px;opacity:.95}
+    main{max-width:var(--max);margin:18px auto;padding:12px}
+    .card{background:#fff;border-radius:10px;padding:14px;box-shadow:0 6px 18px rgba(24,39,75,.06);margin-bottom:14px}
+    .row{display:flex;gap:8px;align-items:center}
+    input[type="text"]{flex:1;padding:10px;border:1px solid #d6dbe3;border-radius:8px;font-size:15px}
+    button.btn{background:var(--accent);color:#fff;padding:10px 12px;border:none;border-radius:8px;cursor:pointer}
+    button.ghost{background:#eef3f6;color:#111;border:1px solid #d6dbe3}
+    .note{font-size:13px;color:#555;margin-top:8px}
+    .videos{display:flex;flex-direction:column;gap:12px;margin-top:12px}
+    .video-item{border:1px solid #e6eef3;padding:10px;border-radius:8px;background:#fff}
+    .video-actions{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
+    .small{font-size:13px;color:#444}
+    a.open{color:var(--accent);text-decoration:none;font-weight:600}
+    .top-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    .muted{color:#666;font-size:13px}
+    .center{text-align:center}
+    footer{max-width:var(--max);margin:18px auto;color:#666;font-size:13px;text-align:center}
+    @media(max-width:520px){header h1{font-size:18px}}
+  </style>
 </head>
 <body>
 
-    <div class="container">
-        <h1>🎥 میری ویڈیو شیئرنگ ویب سائٹ</h1>
+  <header>
+    <h1>🎥 میری ویڈیو شیئرنگ ویب سائٹ</h1>
+    <p>یوٹیوب لنک سیدھا چلائیں — TikTok لنک کھولیں (embed بعض اوقات بلاک ہوتا ہے)</p>
+  </header>
 
-        <input type="text" id="videoUrl" placeholder="YouTube یا TikTok لنک ڈالیں">
-        <button onclick="addVideo()">ویڈیو شامل کریں</button>
-
-        <div id="videoList"></div>
+  <main>
+    <div class="card">
+      <div class="row">
+        <input id="videoUrl" type="text" placeholder="YouTube یا TikTok لنک یہاں چسپاں کریں (مثال: https://www.youtube.com/watch?v=...)">
+        <button id="addBtn" class="btn">ویڈیو شامل کریں</button>
+      </div>
+      <div class="note">نوٹ: YouTube URLs سیدھے iframe سے چلیں گے۔ TikTok کے لیے 'Open in TikTok' بٹن دکھے گا۔</div>
+      <div style="margin-top:10px" class="top-actions">
+        <button id="clearBtn" class="ghost">سب ویڈیوز حذف کریں</button>
+        <div style="flex:1"></div>
+        <div class="muted">ویڈیوز محفوظ: <span id="count">0</span></div>
+      </div>
     </div>
 
-    <!-- Google AdSense Code -->
-    <!-- جب approval مل جائے، یہاں AdSense کا code paste کریں -->
+    <div id="videosContainer" class="videos"></div>
 
-    <script src="script.js"></script>
+    <div class="card center">
+      <div class="small">یہ صفحہ مقامی (آپ کے براؤزر میں) ویڈیوز save کرتا ہے — اگر آپ پوری ویب سائٹ share کرنا چاہتے ہیں تو GitHub Pages پر upload کریں۔</div>
+    </div>
+  </main>
+
+  <footer>
+    <div>پلیز: جب AdSense approval مل جائے تو اس کا script <strong>یہاں</strong> &lt;/body&gt; کے پہلے paste کریں۔</div>
+  </footer>
+
+<script>
+/* Simple Video app with localStorage persistence and YouTube embed.
+   - Supports YouTube embeds automatically.
+   - For TikTok shows an "Open in TikTok" link (iframe often blocked).
+*/
+
+const STORAGE_KEY = 'myvideos_v1';
+let videos = [];
+
+// Utilities
+function save() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(videos));
+  render();
+}
+function load() {
+  try {
+    const s = localStorage.getItem(STORAGE_KEY);
+    videos = s ? JSON.parse(s) : [];
+  } catch(e){ videos = [] }
+}
+
+// Extract YouTube ID (robust)
+function extractYouTubeID(url) {
+  try {
+    // handle direct forms and query param v
+    const u = new URL(url);
+    if (u.hostname.includes('youtu.be')) {
+      return u.pathname.slice(1);
+    }
+    if (u.hostname.includes('youtube.com')) {
+      if (u.searchParams.get('v')) return u.searchParams.get('v');
+      // /embed/ID or /v/ID
+      const p = u.pathname.split('/');
+      return p[p.length-1] || null;
+    }
+  } catch(e){}
+  // fallback regex
+  const m = url.match(/(?:v=|\/)([0-9A-Za-z_-]{11})(?:&|$)/);
+  return m ? m[1] : null;
+}
+
+function isTikTok(url){
+  try { return new URL(url).hostname.includes('tiktok.com') } catch(e){ return false }
+}
+
+function createVideoObject(url){
+  const yt = extractYouTubeID(url);
+  if (yt) return { url, provider: 'youtube', id: yt, likes: 0 };
+  if (isTikTok(url)) return { url, provider: 'tiktok', id: null, likes: 0 };
+  return { url, provider: 'other', id: null, likes: 0 };
+}
+
+// Rendering
+function render(){
+  const container = document.getElementById('videosContainer');
+  container.innerHTML = '';
+  document.getElementById('count').innerText = videos.length;
+  if (videos.length === 0) {
+    container.innerHTML = '<div class="card small center">ابھی کوئی ویڈیو نہیں۔ اوپر لنک پیسٹ کریں اور "ویڈیو شامل کریں" دبائیں۔</div>';
+    return;
+  }
+
+  videos.slice().reverse().forEach((v, idxReverse) => {
+    // show latest first (we reversed)
+    const index = videos.length - 1 - idxReverse;
+    const div = document.createElement('div');
+    div.className = 'video-item';
+
+    if (v.provider === 'youtube' && v.id) {
+      const iframe = document.createElement('iframe');
+      iframe.width = '100%';
+      iframe.height = '250';
+      iframe.src = 'https://www.youtube.com/embed/' + v.id;
+      iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+      iframe.setAttribute('allowfullscreen','');
+      iframe.style.border = 'none';
+      div.appendChild(iframe);
+    } else if (v.provider === 'tiktok') {
+      const p = document.createElement('div');
+      p.innerHTML = '<div class="small">یہ TikTok ویڈیو ہے — embed بعض براؤزرز پر کام نہیں کر سکتا۔ براہِ کرم "Open in TikTok" دبائیں:</div>';
+      const a = document.createElement('a');
+      a.href = v.url;
+      a.target = '_blank';
+      a.className = 'open';
+      a.innerText = 'Open in TikTok';
+      p.appendChild(a);
+      div.appendChild(p);
+    } else {
+      const p = document.createElement('div');
+      p.innerHTML = '<div class="small">یہ ویڈیو/لنک preview کے لیے ہے۔</div><a href="'+v.url+'" target="_blank" class="open">Open link</a>';
+      div.appendChild(p);
+    }
+
+    // actions row
+    const actions = document.createElement('div');
+    actions.className = 'video-actions';
+
+    const likeBtn = document.createElement('button');
+    likeBtn.className = 'btn';
+    likeBtn.style.background = '#e74c3c';
+    likeBtn.innerText = '❤️ لائک ' + v.likes;
+    likeBtn.onclick = () => {
+      videos[index].likes += 1;
+      save();
+    };
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'ghost';
+    delBtn.innerText = 'حذف کریں';
+    delBtn.onclick = () => {
+      if (!confirm('کیا آپ اس ویڈیو کو حذف کرنا چاہتے ہیں؟')) return;
+      videos.splice(index,1); save();
+    };
+
+    actions.appendChild(likeBtn);
+    actions.appendChild(delBtn);
+
+    div.appendChild(actions);
+    container.appendChild(div);
+  });
+}
+
+// Handlers
+document.getElementById('addBtn').addEventListener('click', () => {
+  const inp = document.getElementById('videoUrl');
+  const url = inp.value.trim();
+  if (!url) { alert('براہِ کرم لنک پیسٹ کریں۔'); return; }
+  try {
+    // basic URL validation
+    new URL(url);
+  } catch(e){ alert('غلط URL۔ براہِ کرم مکمل URL پیسٹ کریں۔'); return; }
+
+  const obj = createVideoObject(url);
+  videos.push(obj); save();
+  inp.value = '';
+});
+
+document.getElementById('videoUrl').addEventListener('keydown', (e)=>{
+  if (e.key === 'Enter') document.getElementById('addBtn').click();
+});
+
+document.getElementById('clearBtn').addEventListener('click', ()=>{
+  if (!confirm('کیا آپ واقعی سب ویڈیوز حذف کرنا چاہتے ہیں؟')) return;
+  videos = []; save();
+});
+
+// init
+load();
+// if empty, add a sample video so homepage نہ خالی لگے:
+if (videos.length === 0) {
+  videos.push(createVideoObject('https://www.youtube.com/watch?v=aqz-KE-bpKQ')); // Big Buck Bunny sample
+  save();
+} else {
+  render();
+}
+</script>
+
 </body>
 </html>
